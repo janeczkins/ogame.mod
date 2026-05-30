@@ -650,7 +650,7 @@ func login(params *loginParams) (out *LoginResponse, err error) {
 		return out, errors.New(resp.Status + " : " + string(by))
 	} else if resp.StatusCode >= http.StatusInternalServerError {
 		return out, errors.New("gameforge server error code : " + resp.Status)
-	} else if resp.StatusCode != http.StatusCreated {
+	} else if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		if string(by) == `{"reason":"OTP_REQUIRED"}` {
 			return out, ErrOTPRequired
 		}
@@ -737,29 +737,27 @@ func postSessionsReq(params *loginParams, gameEnvironmentID, platformGameID stri
 	}
 
 	var payload = struct {
-		Identity                string `json:"identity"`
-		Password                string `json:"password"`
-		Locale                  string `json:"locale"`
-		GfLang                  string `json:"gfLang"`
-		PlatformGameID          string `json:"platformGameId"`
-		Blackbox                string `json:"blackbox"`
-		GameEnvironmentID       string `json:"gameEnvironmentId"`
-		AutoGameAccountCreation bool   `json:"autoGameAccountCreation"`
+		Blackbox          string `json:"blackbox"`
+		GameEnvironmentID string `json:"gameEnvironmentId"`
+		PlatformGameID    string `json:"gameId"`
+		GfLang            string `json:"gfLang"`
+		Email             string `json:"identity"`
+		Locale            string `json:"locale"`
+		Password          string `json:"password"`
 	}{
-		Identity:                username,
-		Password:                password,
-		Locale:                  "en_GB",
-		GfLang:                  "en",
-		PlatformGameID:          platformGameID,
-		Blackbox:                blackboxPrefix + blackbox,
-		GameEnvironmentID:       gameEnvironmentID,
-		AutoGameAccountCreation: false,
+		Email:             username,
+		Password:          password,
+		Locale:            "en-GB",
+		GfLang:            "en",
+		PlatformGameID:    platformGameID,
+		Blackbox:          blackboxPrefix + blackbox,
+		GameEnvironmentID: gameEnvironmentID,
 	}
 	by, err := json.Marshal(&payload)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest(http.MethodPost, "https://gameforge.com/api/v1/auth/thin/sessions", bytes.NewReader(by))
+	req, err := http.NewRequest(http.MethodPost, "https://spark-web.gameforge.com/api/v2/authProviders/mauth/sessions", bytes.NewReader(by))
 	if err != nil {
 		return nil, err
 	}
@@ -1025,7 +1023,7 @@ func GetLoginLink(ctx context.Context, device Device, platform Platform, lobby, 
 	var payload = struct {
 		Blackbox      string `json:"blackbox"`
 		Id            int64  `json:"id"`
-		ClickedButton string `json:"clickedButton"`
+		ClickedButton string `json:"account_list"`
 		Server        struct {
 			Language string `json:"language"`
 			Number   int64  `json:"number"`

@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -103,6 +105,27 @@ func LoginHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, ErrorResp(500, err.Error()))
 	}
 	return c.JSON(http.StatusOK, SuccessResp(nil))
+}
+
+// ManualLoginHandler shows instructions for browser-based cookie import.
+func ManualLoginHandler(c echo.Context) error {
+	home, _ := os.UserHomeDir()
+	storageHint := filepath.Join(home, ".ogame", "storage", "<DeviceConf.Name>", "cookies")
+	html := `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>XBot manual login</title>
+<style>body{font-family:sans-serif;max-width:720px;margin:2rem auto;line-height:1.5}code{background:#f4f4f4;padding:2px 6px}</style>
+</head><body>
+<h1>Manual OGame login</h1>
+<p>Automatic Gameforge login failed. Use your browser and cookie export script:</p>
+<ol>
+<li><a href="https://lobby.ogame.gameforge.com/" target="_blank">Log in to OGame lobby</a> in this browser.</li>
+<li>Export cookies to the xengine persistent jar file (see XBot console for the exact path).</li>
+<li>Typical location: <code>` + storageHint + `</code></li>
+<li>XBot will detect the file, restart the engine, and retry login automatically.</li>
+</ol>
+<p>Alternative: if a captcha challenge is active, use <a href="/bot/captcha">/bot/captcha</a>.</p>
+</body></html>`
+	return c.HTML(http.StatusOK, html)
 }
 
 // LogoutHandler ...
@@ -603,6 +626,16 @@ func GetLfResearchHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, ErrorResp(400, "invalid planet id"))
 	}
 	res, err := bot.GetLfResearch(ogame.CelestialID(planetID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, ErrorResp(500, err.Error()))
+	}
+	return c.JSON(http.StatusOK, SuccessResp(res))
+}
+
+// GetLfBonusesHandler ...
+func GetLfBonusesHandler(c echo.Context) error {
+	bot := c.Get("bot").(*OGame)
+	res, err := bot.GetLfBonuses()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, ErrorResp(500, err.Error()))
 	}
@@ -1497,16 +1530,33 @@ func GetCaptchaSolverHandler(c echo.Context) error {
 	challengeID := c.Request().PostFormValue("challenge_id")
 	answer := utils.DoParseI64(c.Request().PostFormValue("answer"))
 
-	if err := gameforge.SolveChallenge(bot.ctx, bot.GetClient(), challengeID, answer); err != nil {
-		bot.error(err)
+	solveErr := gameforge.SolveChallenge(bot.ctx, bot.GetClient(), challengeID, answer)
+	if solveErr != nil {
+		return c.JSON(http.StatusInternalServerError, ErrorResp(500, solveErr.Error()))
 	}
 
 	if !bot.IsLoggedIn() {
-		if err := bot.Login(); err != nil {
-			bot.error(err)
+		loginErr := bot.loginAfterCaptchaSolve(challengeID)
+		if loginErr != nil {
+			return c.JSON(http.StatusInternalServerError, ErrorResp(500, loginErr.Error()))
 		}
 	}
-	return c.Redirect(http.StatusTemporaryRedirect, "/")
+	return c.JSON(http.StatusOK, SuccessResp(nil))
+}
+
+func (b *OGame) loginAfterCaptchaSolve(challengeID string) error {
+	gf, _ := gameforge.New(&gameforge.Config{Ctx: b.ctx, Device: b.device, Platform: PLATFORM, Lobby: b.lobby})
+	res, err := gf.Login(&gameforge.LoginParams{
+		Username:    b.username,
+		Password:    b.password,
+		OtpSecret:   b.otpSecret,
+		ChallengeID: challengeID,
+	})
+	if err != nil {
+		return err
+	}
+	_, _, err = b.loginWithBearerToken(res.Token, "")
+	return err
 }
 
 // CaptchaChallenge ...

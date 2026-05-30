@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"crypto/subtle"
+	"fmt"
 	"github.com/alaingilbert/ogame/pkg/device"
-	"github.com/alaingilbert/ogame/pkg/gameforge/solvers"
 	"github.com/alaingilbert/ogame/pkg/wrapper"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var version = "0.0.0"
@@ -156,6 +157,65 @@ func main() {
 			Usage:   "Set the Device Name",
 			Value:   "device_name",
 			Sources: cli.EnvVars("OGAMED_DEVICENAME"),
+		}, &cli.StringFlag{
+			Name:    "device-system",
+			Usage:   `Set the Device System (Android, Windows, "MacOSX", Linux, iOS)`,
+			Value:   "windows",
+			Sources: cli.EnvVars("OGAMED_DEVICESYSTEM"),
+		},
+		&cli.StringFlag{
+			Name:    "device-browser",
+			Usage:   "Set the Device Browser (Chrome, Opera, Safari, Edge, Firefox)",
+			Value:   "Chrome",
+			Sources: cli.EnvVars("OGAMED_DEVICEBROWSER"),
+		},
+		&cli.IntFlag{
+			Name:    "device-memory",
+			Usage:   "Set the Device Memory",
+			Value:   8,
+			Sources: cli.EnvVars("OGAMED_DEVICEMEMORY"),
+		},
+		&cli.IntFlag{
+			Name:    "device-concurrency",
+			Usage:   "Set the Device Concurrency",
+			Value:   16,
+			Sources: cli.EnvVars("OGAMED_DEVICECONCURRENCY"),
+		},
+		&cli.IntFlag{
+			Name:    "device-color",
+			Usage:   "Set the Device Color depth",
+			Value:   24,
+			Sources: cli.EnvVars("OGAMED_DEVICECOLOR"),
+		},
+		&cli.IntFlag{
+			Name:    "device-width",
+			Usage:   "Set the Device Width",
+			Value:   1920,
+			Sources: cli.EnvVars("OGAMED_DEVICEWIDTH"),
+		},
+		&cli.IntFlag{
+			Name:    "device-height",
+			Usage:   "Set the Device Height",
+			Value:   1080,
+			Sources: cli.EnvVars("OGAMED_DEVICEHEIGHT"),
+		},
+		&cli.StringFlag{
+			Name:    "device-timezone",
+			Usage:   "Set the Device Timezone",
+			Value:   "Europe/Berlin",
+			Sources: cli.EnvVars("OGAMED_DEVICETIMEZONE"),
+		},
+		&cli.StringFlag{
+			Name:    "device-lang",
+			Usage:   "Set the Device Language",
+			Value:   "en-US,en",
+			Sources: cli.EnvVars("OGAMED_DEVICELANG"),
+		},
+		&cli.StringFlag{
+			Name:    "device-user-agent",
+			Usage:   "Set the Device User-Agent",
+			Value:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+			Sources: cli.EnvVars("OGAMED_DEVICEUSERAGENT"),
 		},
 	}
 	app.Action = start
@@ -179,6 +239,9 @@ func start(ctx context.Context, c *cli.Command) error {
 	proxyLoginOnly := c.Bool("proxy-login-only")
 	lobby := c.String("lobby")
 	apiNewHostname := c.String("api-new-hostname")
+	if apiNewHostname == "" || apiNewHostname == "http://127.0.0.1:8080" {
+		apiNewHostname = fmt.Sprintf("http://127.0.0.1:%d", port)
+	}
 	enableTLS := c.Bool("enable-tls")
 	tlsKeyFile := c.String("tls-key-file")
 	tlsCertFile := c.String("tls-cert-file")
@@ -187,17 +250,62 @@ func start(ctx context.Context, c *cli.Command) error {
 	corsEnabled := c.Bool("cors-enabled")
 	njaApiKey := c.String("nja-api-key")
 	deviceName := c.String("device-name")
-	// TODO: put device config in flags & env variables
+	deviceSystem := c.String("device-system")
+	deviceBrowser := c.String("device-browser")
+	deviceMemory := c.Int("device-memory")
+	deviceConcurrency := c.Int("device-concurrency")
+	deviceColor := c.Int("device-color")
+	deviceWidth := c.Int("device-width")
+	deviceHeight := c.Int("device-height")
+	deviceTimezone := c.String("device-timezone")
+	deviceLang := c.String("device-lang")
+	deviceUserAgent := c.String("device-user-agent")
+
+	deviceSystem = strings.ToLower(deviceSystem)
+	var deviceSystemParam device.Os
+	switch deviceSystem {
+	case "android":
+		deviceSystemParam = device.Android
+	case "windows":
+		deviceSystemParam = device.Windows
+	case "macosx":
+		deviceSystemParam = device.MacOSX
+	case "linux":
+		deviceSystemParam = device.Linux
+	case "ios":
+		deviceSystemParam = device.Ios
+	default:
+		deviceSystemParam = device.Windows
+	}
+
+	deviceBrowser = strings.ToLower(deviceBrowser)
+	var deviceBrowserParam device.Browser
+	switch deviceBrowser {
+	case "chrome":
+		deviceBrowserParam = device.Chrome
+	case "opera":
+		deviceBrowserParam = device.Opera
+	case "safari":
+		deviceBrowserParam = device.Safari
+	case "edge":
+		deviceBrowserParam = device.Edge
+	case "firefox":
+		deviceBrowserParam = device.Firefox
+	default:
+		deviceBrowserParam = device.Chrome
+	}
+
 	deviceInst, err := device.NewBuilder(deviceName).
-		SetOsName(device.Windows).
-		SetBrowserName(device.Chrome).
-		SetMemory(8).
-		SetHardwareConcurrency(16).
-		ScreenColorDepth(24).
-		SetScreenWidth(1900).
-		SetScreenHeight(900).
-		SetTimezone("America/Los_Angeles").
-		SetLanguages("en-US,en").
+		SetOsName(deviceSystemParam).
+		SetBrowserName(deviceBrowserParam).
+		SetMemory(int(deviceMemory)).
+		SetHardwareConcurrency(int(deviceConcurrency)).
+		ScreenColorDepth(int(deviceColor)).
+		SetScreenWidth(int(deviceWidth)).
+		SetScreenHeight(int(deviceHeight)).
+		SetTimezone(deviceTimezone).
+		SetLanguages(deviceLang).
+		SetUserAgent(deviceUserAgent).
 		Build()
 	if err != nil {
 		panic(err)
@@ -220,7 +328,7 @@ func start(ctx context.Context, c *cli.Command) error {
 		APINewHostname: apiNewHostname,
 	}
 	if njaApiKey != "" {
-		params.CaptchaSolver = solvers.NinjaSolver(njaApiKey)
+		params.CaptchaSolver = TbotSolver(njaApiKey)
 	}
 
 	bot, err := wrapper.NewWithParams(params)
@@ -272,6 +380,7 @@ func start(ctx context.Context, c *cli.Command) error {
 	e.GET("/bot/empire/type/:typeID", wrapper.GetEmpireHandler)
 	e.POST("/bot/page-content", wrapper.PageContentHandler)
 	e.GET("/bot/login", wrapper.LoginHandler)
+	e.GET("/bot/manual-login", wrapper.ManualLoginHandler)
 	e.GET("/bot/logout", wrapper.LogoutHandler)
 	e.GET("/bot/username", wrapper.GetUsernameHandler)
 	e.GET("/bot/universe-name", wrapper.GetUniverseNameHandler)
@@ -323,6 +432,7 @@ func start(ctx context.Context, c *cli.Command) error {
 	e.GET("/bot/planets/:planetID/resources-buildings", wrapper.GetResourcesBuildingsHandler)
 	e.GET("/bot/planets/:planetID/lifeform-buildings", wrapper.GetLfBuildingsHandler)
 	e.GET("/bot/planets/:planetID/lifeform-techs", wrapper.GetLfResearchHandler)
+	e.GET("/bot/lfbonuses", wrapper.GetLfBonusesHandler)
 	e.GET("/bot/planets/:planetID/defence", wrapper.GetDefenseHandler)
 	e.GET("/bot/planets/:planetID/ships", wrapper.GetShipsHandler)
 	e.GET("/bot/planets/:planetID/facilities", wrapper.GetFacilitiesHandler)
