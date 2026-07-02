@@ -173,19 +173,21 @@ const Report EspionageReportType = 1
 
 // CombatReportSummary summary of combat report
 type CombatReportSummary struct {
-	ID           int64
-	APIKey       string
-	FleetID      FleetID
-	Origin       *Coordinate
-	Destination  Coordinate
-	AttackerName string
-	DefenderName string
-	Loot         int64
-	Metal        int64
-	Crystal      int64
-	Deuterium    int64
-	DebrisField  int64
-	CreatedAt    time.Time
+	ID             int64
+	APIKey         string
+	FleetID        FleetID
+	Origin         *Coordinate
+	Destination    Coordinate
+	AttackerName   string
+	DefenderName   string
+	Loot           int64
+	Metal          int64
+	Crystal        int64
+	Deuterium      int64
+	DebrisField    int64
+	Winner         string // "attacker", "defender" or "draw"
+	AttackerLosses int64  // total value of units the attacker lost
+	CreatedAt      time.Time
 }
 
 // EspionageReportSummary summary of espionage report

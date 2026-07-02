@@ -606,6 +606,13 @@ func (b *Prioritize) GetExpeditionMessages(maxPage int64) ([]ogame.ExpeditionMes
 	return b.bot.getExpeditionMessages(maxPage)
 }
 
+// GetCombatReportMessages gets the combat report summaries
+func (b *Prioritize) GetCombatReportMessages(maxPage int64) ([]ogame.CombatReportSummary, error) {
+	b.begin("GetCombatReportMessages")
+	defer b.done()
+	return b.bot.getCombatReportMessages(maxPage)
+}
+
 // GetExpeditionMessageAt gets the expedition message for time t
 func (b *Prioritize) GetExpeditionMessageAt(t time.Time) (ogame.ExpeditionMessage, error) {
 	b.begin("GetExpeditionMessageAt")

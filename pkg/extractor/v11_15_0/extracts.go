@@ -23,12 +23,17 @@ func extractCombatReportMessagesFromDoc(doc *goquery.Document) ([]ogame.CombatRe
 				rawMessageData := s.Find("div.rawMessageData")
 				resultStr := rawMessageData.AttrOr("data-raw-result", "")
 				var result struct {
-					Loot struct {
+					Winner string
+					Loot   struct {
 						Percentage int64
 						Resources  []struct {
 							Resource string
 							Amount   int64
 						}
+					}
+					TotalValueOfUnitsLost []struct {
+						Side  string
+						Value int64
 					}
 				}
 				_ = json.Unmarshal([]byte(resultStr), &result)
@@ -67,6 +72,13 @@ func extractCombatReportMessagesFromDoc(doc *goquery.Document) ([]ogame.CombatRe
 						report.Crystal = resource.Amount
 					} else if ogame.IsStrMetal(res) {
 						report.Metal = resource.Amount
+					}
+				}
+
+				report.Winner = result.Winner
+				for _, lost := range result.TotalValueOfUnitsLost {
+					if lost.Side == "attacker" {
+						report.AttackerLosses = lost.Value
 					}
 				}
 

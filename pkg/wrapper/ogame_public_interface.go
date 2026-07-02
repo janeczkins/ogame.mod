@@ -613,6 +613,11 @@ func (b *OGame) GetExpeditionMessages(maxPage int64) ([]ogame.ExpeditionMessage,
 	return b.WithPriority(taskRunner.Normal).GetExpeditionMessages(maxPage)
 }
 
+// GetCombatReportMessages gets the combat report summaries
+func (b *OGame) GetCombatReportMessages(maxPage int64) ([]ogame.CombatReportSummary, error) {
+	return b.WithPriority(taskRunner.Normal).GetCombatReportMessages(maxPage)
+}
+
 // GetExpeditionMessageAt gets the expedition message for time t
 func (b *OGame) GetExpeditionMessageAt(t time.Time) (ogame.ExpeditionMessage, error) {
 	return b.WithPriority(taskRunner.Normal).GetExpeditionMessageAt(t)

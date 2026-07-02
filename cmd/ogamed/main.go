@@ -404,6 +404,8 @@ func start(ctx context.Context, c *cli.Command) error {
 	e.GET("/bot/espionage-report/:msgid", wrapper.GetEspionageReportHandler)
 	e.GET("/bot/espionage-report/:galaxy/:system/:position", wrapper.GetEspionageReportForHandler)
 	e.GET("/bot/espionage-report", wrapper.GetEspionageReportMessagesHandler)
+	e.GET("/bot/expedition-messages", wrapper.GetExpeditionMessagesHandler)
+	e.GET("/bot/combat-reports", wrapper.GetCombatReportsHandler)
 	e.POST("/bot/delete-report/:messageID", wrapper.DeleteMessageHandler)
 	e.POST("/bot/delete-all-espionage-reports", wrapper.DeleteEspionageMessagesHandler)
 	e.POST("/bot/delete-all-reports/:tabIndex", wrapper.DeleteMessagesFromTabHandler)
