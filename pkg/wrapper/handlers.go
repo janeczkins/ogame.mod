@@ -1140,6 +1140,42 @@ func SendDiscoveryHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, SuccessResp(true))
 }
 
+// GetAvailableDiscoveriesHandler ...
+func GetAvailableDiscoveriesHandler(c echo.Context) error {
+	bot := c.Get("bot").(*OGame)
+	planetID, err := utils.ParseI64(c.Param("planetID"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, ErrorResp(400, "invalid planet id"))
+	}
+	res, err := bot.GetAvailableDiscoveries(ChangePlanet(ogame.CelestialID(planetID)))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, ErrorResp(500, err.Error()))
+	}
+	return c.JSON(http.StatusOK, SuccessResp(res))
+}
+
+// GetPositionsAvailableForDiscoveryHandler ...
+func GetPositionsAvailableForDiscoveryHandler(c echo.Context) error {
+	bot := c.Get("bot").(*OGame)
+	planetID, err := utils.ParseI64(c.Param("planetID"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, ErrorResp(400, "invalid planet id"))
+	}
+	galaxy, err := utils.ParseI64(c.Request().PostFormValue("galaxy"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, ErrorResp(400, "invalid galaxy"))
+	}
+	system, err := utils.ParseI64(c.Request().PostFormValue("system"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, ErrorResp(400, "invalid system"))
+	}
+	res, err := bot.GetPositionsAvailableForDiscoveryFleet(galaxy, system, ChangePlanet(ogame.CelestialID(planetID)))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, ErrorResp(500, err.Error()))
+	}
+	return c.JSON(http.StatusOK, SuccessResp(res))
+}
+
 // GetAlliancePageContentHandler ...
 func GetAlliancePageContentHandler(c echo.Context) error {
 	bot := c.Get("bot").(*OGame)
