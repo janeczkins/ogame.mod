@@ -4184,7 +4184,7 @@ func (b *OGame) sendDiscoveryFleet(celestialID ogame.CelestialID, coord ogame.Co
 		"system":   {utils.FI64(coord.System)},
 		"position": {utils.FI64(coord.Position)},
 		"token":    {galaxyPage.Token},
-	})
+	}, options...)
 	if err != nil {
 		return err
 	}
