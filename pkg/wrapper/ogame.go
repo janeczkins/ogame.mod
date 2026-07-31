@@ -915,7 +915,10 @@ func (b *OGame) execRequest(method, finalURL string, payload, vals url.Values) (
 	}
 
 	if resp.StatusCode >= http.StatusInternalServerError {
-		return []byte{}, nil
+		// Report the failure instead of returning an empty body with a nil error. Callers used to
+		// parse that empty body into "nothing found", so a 500/503 was indistinguishable from a
+		// genuinely empty inbox and silently disabled features like AutoFarm.
+		return []byte{}, fmt.Errorf("server error %s for page %s", resp.Status, getPageName(vals))
 	}
 	return io.ReadAll(resp.Body)
 }
@@ -3680,12 +3683,20 @@ func getMessages[T any](b *OGame, maxPage int64, tabID ogame.MessagesTabID, extr
 		Components   []any  `json:"components"`
 		NewAjaxToken string `json:"newAjaxToken"`
 	}
-	pageHTML, _ := b.getPageMessages(1, tabID)
-	_ = json.Unmarshal(pageHTML, &res)
+	pageHTML, err := b.getPageMessages(1, tabID)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(pageHTML, &res); err != nil {
+		return nil, errors.New("failed to parse messages of tab " + utils.FI64(tabID) + ": " + err.Error())
+	}
 	msgs := make([]T, 0)
 	for _, m := range res.Messages {
-		doc := ([]byte)(m.(string))
-		newMessage, _, _ := extractor(doc)
+		s, ok := m.(string)
+		if !ok {
+			continue
+		}
+		newMessage, _, _ := extractor(([]byte)(s))
 		msgs = append(msgs, newMessage...)
 	}
 	return msgs, nil
@@ -3757,7 +3768,10 @@ func (b *OGame) getMarketplaceMessages(maxPage int64, tabID ogame.MessagesTabID)
 }
 
 func (b *OGame) getExpeditionMessageAt(t time.Time) (ogame.ExpeditionMessage, error) {
-	pageHTML, _ := b.getPageMessages(1, ExpeditionsMessagesTabID)
+	pageHTML, err := b.getPageMessages(1, ExpeditionsMessagesTabID)
+	if err != nil {
+		return ogame.ExpeditionMessage{}, err
+	}
 	var res struct {
 		ServerLang   string `json:"js_serverlang"`
 		ServerID     string `json:"js_serverid"`
@@ -3766,11 +3780,16 @@ func (b *OGame) getExpeditionMessageAt(t time.Time) (ogame.ExpeditionMessage, er
 		Components   []any  `json:"components"`
 		NewAjaxToken string `json:"newAjaxToken"`
 	}
-	_ = json.Unmarshal(pageHTML, &res)
+	if err := json.Unmarshal(pageHTML, &res); err != nil {
+		return ogame.ExpeditionMessage{}, errors.New("failed to parse expedition messages: " + err.Error())
+	}
 	newMessages := make([]ogame.ExpeditionMessage, 0)
 	for _, m := range res.Messages {
-		doc := ([]byte)(m.(string))
-		newMessage, _, _ := b.extractor.ExtractExpeditionMessages(doc)
+		s, ok := m.(string)
+		if !ok {
+			continue
+		}
+		newMessage, _, _ := b.extractor.ExtractExpeditionMessages(([]byte)(s))
 		newMessages = append(newMessages, newMessage...)
 	}
 	for _, m := range newMessages {
@@ -3797,14 +3816,19 @@ func (b *OGame) getCombatReportSummaries() ([]ogame.CombatReportSummary, error) 
 		Components   []any  `json:"components"`
 		NewAjaxToken string `json:"newAjaxToken"`
 	}
-	_ = json.Unmarshal(pageHTML, &res)
+	if err := json.Unmarshal(pageHTML, &res); err != nil {
+		return nil, errors.New("failed to parse combat report messages: " + err.Error())
+	}
 	newMessages := make([]ogame.CombatReportSummary, 0)
 	for i, m := range res.Messages {
 		if i > 40 {
 			break
 		}
-		doc := ([]byte)(m.(string))
-		newMessage, _, _ := b.extractor.ExtractCombatReportMessagesSummary(doc)
+		s, ok := m.(string)
+		if !ok {
+			continue
+		}
+		newMessage, _, _ := b.extractor.ExtractCombatReportMessagesSummary(([]byte)(s))
 		newMessages = append(newMessages, newMessage...)
 	}
 	return newMessages, nil
@@ -3857,14 +3881,19 @@ func (b *OGame) getEspionageReportFor(coord ogame.Coordinate) (ogame.EspionageRe
 		Components   []any  `json:"components"`
 		NewAjaxToken string `json:"newAjaxToken"`
 	}
-	_ = json.Unmarshal(pageHTML, &res)
+	if err := json.Unmarshal(pageHTML, &res); err != nil {
+		return ogame.EspionageReport{}, errors.New("failed to parse espionage report messages: " + err.Error())
+	}
 	newMessages := make([]ogame.EspionageReportSummary, 0)
 	for i, m := range res.Messages {
 		if i > 40 {
 			break
 		}
-		doc := ([]byte)(m.(string))
-		newMessage, _, _ := b.extractor.ExtractEspionageReportMessageIDs(doc)
+		s, ok := m.(string)
+		if !ok {
+			continue
+		}
+		newMessage, _, _ := b.extractor.ExtractEspionageReportMessageIDs(([]byte)(s))
 		newMessages = append(newMessages, newMessage...)
 	}
 	for _, m := range newMessages {
