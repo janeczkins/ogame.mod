@@ -1558,6 +1558,13 @@ func GetCaptchaHandler(c echo.Context) error {
 	})
 	var captchaErr *gameforge.CaptchaRequiredError
 	if errors.As(err, &captchaErr) {
+		// Proof-of-work challenges are solved during login and have no icons to
+		// show; if one still reaches this page, say so instead of rendering two
+		// empty <img> tags.
+		if challengeType, typeErr := gameforge.GetChallengeType(bot.ctx, bot.GetClient(), captchaErr.ChallengeID); typeErr == nil &&
+			challengeType == gameforge.ChallengeTypePow {
+			return c.HTML(http.StatusOK, "proof-of-work captcha could not be solved automatically: "+captchaErr.ChallengeID)
+		}
 		questionRaw, iconsRaw, err := gameforge.StartChallenge(bot.ctx, bot.GetClient(), captchaErr.ChallengeID)
 		if err != nil {
 			return c.HTML(http.StatusOK, err.Error())
@@ -1633,6 +1640,14 @@ func GetCaptchaChallengeHandler(c echo.Context) error {
 	})
 	var captchaErr *gameforge.CaptchaRequiredError
 	if errors.As(err, &captchaErr) {
+		// Login already tries to solve proof-of-work challenges by itself, so
+		// reaching here with one means that failed. There is nothing for a human
+		// to click, and the image-drop endpoints would only answer 422.
+		if challengeType, typeErr := gameforge.GetChallengeType(bot.ctx, bot.GetClient(), captchaErr.ChallengeID); typeErr == nil &&
+			challengeType == gameforge.ChallengeTypePow {
+			return c.JSON(http.StatusInternalServerError,
+				ErrorResp(500, "proof-of-work captcha could not be solved automatically"))
+		}
 		questionRaw, iconsRaw, err := gameforge.StartChallenge(bot.ctx, bot.GetClient(), captchaErr.ChallengeID)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, ErrorResp(500, err.Error()))

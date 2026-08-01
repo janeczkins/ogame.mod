@@ -340,13 +340,18 @@ RETRY:
 	}
 	var captchaErr *CaptchaRequiredError
 	if errors.As(err, &captchaErr) {
-		if maxTry <= 0 || solver == nil {
+		if maxTry <= 0 {
 			return err
 		}
 		maxTry--
 		challengeID = captchaErr.ChallengeID
-		if err := solveCaptcha(ctx, device, challengeID, solver); err != nil {
-			return err
+		if solveErr := solveCaptcha(ctx, device, challengeID, solver); solveErr != nil {
+			// Without a solver an image-drop challenge is unsolvable here; report
+			// the original "captcha required" so callers can prompt the user.
+			if errors.Is(solveErr, errNoCaptchaSolver) {
+				return err
+			}
+			return solveErr
 		}
 		goto RETRY
 	}
@@ -354,6 +359,23 @@ RETRY:
 }
 
 func solveCaptcha(ctx context.Context, client HttpClient, challengeID string, captchaCallback CaptchaSolver) error {
+	// Gameforge issues both proof-of-work and image-drop challenges for the same
+	// account, so the type decides how to answer. Fetching it also activates the
+	// challenge, exactly as the browser's captcha loader does.
+	challengeType, err := GetChallengeType(ctx, client, challengeID)
+	if err != nil {
+		return errors.New("failed to detect captcha challenge type: " + err.Error())
+	}
+	if challengeType == ChallengeTypePow {
+		// Proof-of-work needs no human: burn the CPU and move on.
+		if err := SolvePowCaptcha(ctx, client, challengeID); err != nil {
+			return errors.New("failed to solve pow captcha challenge: " + err.Error())
+		}
+		return nil
+	}
+	if captchaCallback == nil {
+		return errNoCaptchaSolver
+	}
 	questionRaw, iconsRaw, err := StartChallenge(ctx, client, challengeID)
 	if err != nil {
 		return errors.New("failed to start captcha challenge: " + err.Error())
@@ -797,6 +819,12 @@ func StartChallenge(ctx context.Context, client HttpClient, challengeID string) 
 		raw, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return nil, err
+		}
+		// Without this the image-drop endpoints answer a proof-of-work challenge
+		// with 422/404 and empty bodies, and the caller happily reports success
+		// with blank captcha images.
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("GET %s: HTTP %d: %s", u, resp.StatusCode, truncate(string(raw), 200))
 		}
 		return raw, nil
 	}
