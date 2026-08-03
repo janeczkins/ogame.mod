@@ -3,6 +3,7 @@ package wrapper
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/alaingilbert/ogame/pkg/gameforge"
@@ -1182,21 +1183,89 @@ func GetAlliancePageContentHandler(c echo.Context) error {
 	allianceID := c.QueryParam("allianceId")
 	vals := url.Values{"allianceId": {allianceID}}
 	pageHTML, _ := bot.GetPageContent(vals)
+	pageHTML = replaceHostname(bot, pageHTML, browserBaseURL(c, bot))
 	pageHTML = removeCookiesBanner(pageHTML)
 	return c.HTML(http.StatusOK, string(pageHTML))
 }
 
-func replaceHostname(bot *OGame, html []byte) []byte {
+// browserBaseURL is the origin the player's browser used to reach this engine. Game pages are
+// rewritten to point back at it, so the links work on whatever address the player actually
+// typed (localhost, a LAN address, a VPS hostname) instead of the single address baked into
+// --api-new-hostname at startup. That flag stays the fallback for callers without a request.
+func browserBaseURL(c echo.Context, bot *OGame) string {
+	host := c.Request().Host
+	if host == "" {
+		return bot.apiNewHostname
+	}
+	scheme := "http"
+	if c.Request().TLS != nil {
+		scheme = "https"
+	}
+	if proto := c.Request().Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+	return scheme + "://" + host
+}
+
+// replaceAllButPort replaces every occurrence of old with new, except the ones directly
+// followed by ":". Those are host:port forms — the in-game chat node (serverURL:24114) is
+// one — and rewriting them yields "http://host:port:24114/...", an URL the browser cannot
+// resolve. socket.io then fails to load and takes the whole chat down with it.
+func replaceAllButPort(src, old, new []byte) []byte {
+	if len(old) == 0 {
+		return src
+	}
+	out := make([]byte, 0, len(src))
+	for {
+		i := bytes.Index(src, old)
+		if i < 0 {
+			break
+		}
+		end := i + len(old)
+		out = append(out, src[:i]...)
+		if end < len(src) && src[end] == ':' {
+			out = append(out, old...)
+		} else {
+			out = append(out, new...)
+		}
+		src = src[end:]
+	}
+	return append(out, src...)
+}
+
+func replaceHostname(bot *OGame, html []byte, newBaseURL string) []byte {
+	if newBaseURL == "" {
+		return html
+	}
 	serverURLBytes := []byte(bot.cache.serverURL)
-	apiNewHostnameBytes := []byte(bot.apiNewHostname)
+	apiNewHostnameBytes := []byte(newBaseURL)
 	escapedServerURL := bytes.Replace(serverURLBytes, []byte("/"), []byte(`\/`), -1)
 	doubleEscapedServerURL := bytes.Replace(serverURLBytes, []byte("/"), []byte("\\\\\\/"), -1)
 	escapedAPINewHostname := bytes.Replace(apiNewHostnameBytes, []byte("/"), []byte(`\/`), -1)
 	doubleEscapedAPINewHostname := bytes.Replace(apiNewHostnameBytes, []byte("/"), []byte("\\\\\\/"), -1)
-	html = bytes.Replace(html, serverURLBytes, apiNewHostnameBytes, -1)
-	html = bytes.Replace(html, escapedServerURL, escapedAPINewHostname, -1)
-	html = bytes.Replace(html, doubleEscapedServerURL, doubleEscapedAPINewHostname, -1)
+	html = replaceAllButPort(html, serverURLBytes, apiNewHostnameBytes)
+	html = replaceAllButPort(html, escapedServerURL, escapedAPINewHostname)
+	html = replaceAllButPort(html, doubleEscapedServerURL, doubleEscapedAPINewHostname)
 	return html
+}
+
+// gameBlob answers a proxied game request with the content type the page scripts expect.
+// Ajax endpoints (asJson=1) reply with JSON, and OGame's own handlers ignore a JSON body
+// that arrives labelled text/html — the lifeform picker and other overlays then look like
+// they do nothing at all.
+func gameBlob(c echo.Context, body []byte) error {
+	if looksLikeJSON(body) {
+		return c.Blob(http.StatusOK, echo.MIMEApplicationJSONCharsetUTF8, body)
+	}
+	return c.HTMLBlob(http.StatusOK, body)
+}
+
+func looksLikeJSON(body []byte) bool {
+	trimmed := bytes.TrimLeft(body, " \t\r\n")
+	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
+		return false
+	}
+	return json.Valid(trimmed)
 }
 
 // GetStaticHandler ...
@@ -1230,7 +1299,7 @@ func GetStaticHandler(c echo.Context) error {
 	}
 
 	if strings.Contains(c.Request().URL.String(), ".xml") {
-		body = replaceHostname(bot, body)
+		body = replaceHostname(bot, body, browserBaseURL(c, bot))
 		return c.Blob(http.StatusOK, "application/xml", body)
 	}
 
@@ -1254,9 +1323,9 @@ func GetFromGameHandler(c echo.Context) error {
 		vals = c.QueryParams()
 	}
 	pageHTML, _ := bot.GetPageContent(vals)
-	pageHTML = replaceHostname(bot, pageHTML)
+	pageHTML = replaceHostname(bot, pageHTML, browserBaseURL(c, bot))
 	pageHTML = removeCookiesBanner(pageHTML)
-	return c.HTMLBlob(http.StatusOK, pageHTML)
+	return gameBlob(c, pageHTML)
 }
 
 // PostToGameHandler ...
@@ -1268,9 +1337,9 @@ func PostToGameHandler(c echo.Context) error {
 	}
 	payload, _ := c.FormParams()
 	pageHTML, _ := bot.PostPageContent(vals, payload)
-	pageHTML = replaceHostname(bot, pageHTML)
+	pageHTML = replaceHostname(bot, pageHTML, browserBaseURL(c, bot))
 	pageHTML = removeCookiesBanner(pageHTML)
-	return c.HTMLBlob(http.StatusOK, pageHTML)
+	return gameBlob(c, pageHTML)
 }
 
 // GetStaticHEADHandler ...
