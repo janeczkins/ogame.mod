@@ -36,11 +36,3 @@ func TestReplaceAllButPortMixedOccurrences(t *testing.T) {
 		"http://127.0.0.1:8080/game/index.php|https://s1-en.ogame.gameforge.com:24114/socket.io/",
 		string(replaceAllButPort(page, server, proxy)))
 }
-
-func TestLooksLikeJSON(t *testing.T) {
-	assert.True(t, looksLikeJSON([]byte(`{"status":"ok"}`)))
-	assert.True(t, looksLikeJSON([]byte("\n  [1,2,3]")))
-	assert.False(t, looksLikeJSON([]byte("<!DOCTYPE html><html></html>")))
-	assert.False(t, looksLikeJSON([]byte("{not json")))
-	assert.False(t, looksLikeJSON(nil))
-}

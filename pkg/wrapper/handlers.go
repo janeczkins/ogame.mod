@@ -3,7 +3,6 @@ package wrapper
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/alaingilbert/ogame/pkg/gameforge"
@@ -1249,24 +1248,12 @@ func replaceHostname(bot *OGame, html []byte, newBaseURL string) []byte {
 	return html
 }
 
-// gameBlob answers a proxied game request with the content type the page scripts expect.
-// Ajax endpoints (asJson=1) reply with JSON, and OGame's own handlers ignore a JSON body
-// that arrives labelled text/html — the lifeform picker and other overlays then look like
-// they do nothing at all.
-func gameBlob(c echo.Context, body []byte) error {
-	if looksLikeJSON(body) {
-		return c.Blob(http.StatusOK, echo.MIMEApplicationJSONCharsetUTF8, body)
-	}
-	return c.HTMLBlob(http.StatusOK, body)
-}
-
-func looksLikeJSON(body []byte) bool {
-	trimmed := bytes.TrimLeft(body, " \t\r\n")
-	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
-		return false
-	}
-	return json.Valid(trimmed)
-}
+// Proxied game pages are always answered as text/html, including the ajax endpoints that
+// reply with a JSON body. That is not an oversight: OGame's own scripts parse those bodies
+// themselves — `$.post(url, data, (response) => JSON.parse(response))` — so labelling the
+// answer application/json makes jQuery parse it first, hands the callback an object, and
+// JSON.parse throws on it. v1.5.18 shipped that and every overlay reached this way (ship and
+// research details, messages) stopped opening.
 
 // GetStaticHandler ...
 func GetStaticHandler(c echo.Context) error {
@@ -1325,7 +1312,7 @@ func GetFromGameHandler(c echo.Context) error {
 	pageHTML, _ := bot.GetPageContent(vals)
 	pageHTML = replaceHostname(bot, pageHTML, browserBaseURL(c, bot))
 	pageHTML = removeCookiesBanner(pageHTML)
-	return gameBlob(c, pageHTML)
+	return c.HTMLBlob(http.StatusOK, pageHTML)
 }
 
 // PostToGameHandler ...
@@ -1339,7 +1326,7 @@ func PostToGameHandler(c echo.Context) error {
 	pageHTML, _ := bot.PostPageContent(vals, payload)
 	pageHTML = replaceHostname(bot, pageHTML, browserBaseURL(c, bot))
 	pageHTML = removeCookiesBanner(pageHTML)
-	return gameBlob(c, pageHTML)
+	return c.HTMLBlob(http.StatusOK, pageHTML)
 }
 
 // GetStaticHEADHandler ...
