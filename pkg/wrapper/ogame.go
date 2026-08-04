@@ -2447,7 +2447,12 @@ func (b *OGame) doAuction(celestialID ogame.CelestialID, bid map[ogame.Celestial
 	return nil
 }
 
-func calcResources(price int64, planetResources ogame.PlanetResources, multiplier ogame.Multiplier) url.Values {
+// calcResources spreads the offer price over the celestials the player owns and returns the
+// bid payload plus how much of the price could NOT be covered (0 when the offer is affordable).
+// Celestials are walked in a stable, sorted order: ranging over the map directly made the bid
+// depend on Go's randomized map iteration, so the same offer produced a different (and sometimes
+// invalid) payload on every attempt.
+func calcResources(price int64, planetResources ogame.PlanetResources, multiplier ogame.Multiplier) (url.Values, int64) {
 	sortedCelestialIDs := make([]ogame.CelestialID, 0)
 	for celestialID := range planetResources {
 		sortedCelestialIDs = append(sortedCelestialIDs, celestialID)
@@ -2458,37 +2463,43 @@ func calcResources(price int64, planetResources ogame.PlanetResources, multiplie
 
 	payload := url.Values{}
 	remaining := price
-	multMetal := multiplier.Metal
-	multCrystal := multiplier.Crystal
-	multDeuterium := multiplier.Deuterium
-	for celestialID, res := range planetResources {
-		metalNeeded := res.Input.Metal
-		if remaining < int64(float64(metalNeeded)*multMetal) {
-			metalNeeded = int64(math.Ceil(float64(remaining) / multMetal))
+	// take returns how much of one resource to offer from a celestial and subtracts its value
+	// from what is still owed. Rounding up the last chunk can be worth slightly more than what
+	// is left, so "remaining" is floored at 0 — it used to go negative, and the next celestial
+	// then bid a negative amount, which the game rejects.
+	take := func(available int64, mult float64) int64 {
+		if remaining <= 0 || available <= 0 || mult <= 0 {
+			return 0
 		}
-		remaining -= int64(float64(metalNeeded) * multMetal)
-
-		crystalNeeded := res.Input.Crystal
-		if remaining < int64(float64(crystalNeeded)*multCrystal) {
-			crystalNeeded = int64(math.Ceil(float64(remaining) / multCrystal))
+		needed := available
+		if int64(float64(needed)*mult) > remaining {
+			needed = int64(math.Ceil(float64(remaining) / mult))
 		}
-		remaining -= int64(float64(crystalNeeded) * multCrystal)
-
-		deuteriumNeeded := res.Input.Deuterium
-		if remaining < int64(float64(deuteriumNeeded)*multDeuterium) {
-			deuteriumNeeded = int64(math.Ceil(float64(remaining) / multDeuterium))
+		if value := int64(float64(needed) * mult); value >= remaining {
+			remaining = 0
+		} else {
+			remaining -= value
 		}
-		remaining -= int64(float64(deuteriumNeeded) * multDeuterium)
+		return needed
+	}
+	for _, celestialID := range sortedCelestialIDs {
+		res := planetResources[celestialID]
+		metalNeeded := take(res.Input.Metal, multiplier.Metal)
+		crystalNeeded := take(res.Input.Crystal, multiplier.Crystal)
+		deuteriumNeeded := take(res.Input.Deuterium, multiplier.Deuterium)
 
 		payload.Add("bid[planets]["+utils.FI64(celestialID)+"][metal]", utils.FI64(metalNeeded))
 		payload.Add("bid[planets]["+utils.FI64(celestialID)+"][crystal]", utils.FI64(crystalNeeded))
 		payload.Add("bid[planets]["+utils.FI64(celestialID)+"][deuterium]", utils.FI64(deuteriumNeeded))
 	}
-	return payload
+	return payload, remaining
 }
 
 func (b *OGame) traderImportExportTrade(price int64, importToken string, planetResources ogame.PlanetResources, multiplier ogame.Multiplier) (string, error) {
-	payload := calcResources(price, planetResources, multiplier)
+	payload, missing := calcResources(price, planetResources, multiplier)
+	if missing > 0 {
+		return "", fmt.Errorf("not enough resources for the offer of the day: %d of %d missing", missing, price)
+	}
 	payload.Add("action", "trade")
 	payload.Add("bid[honor]", "0")
 	payload.Add("token", importToken)
@@ -2499,9 +2510,10 @@ func (b *OGame) traderImportExportTrade(price int64, importToken string, planetR
 	}
 	// {"message":"You have bought a container.","error":false,"item":{"uuid":"40f6c78e11be01ad3389b7dccd6ab8efa9347f3c","itemText":"You have purchased 1 KRAKEN Bronze.","bargainText":"The contents of the container not appeal to you? For 500 Dark Matter you can exchange the container for another random container of the same quality. You can only carry out this exchange 2 times per daily offer.","bargainCost":500,"bargainCostText":"Costs: 500 Dark Matter","tooltip":"KRAKEN Bronze|Reduces the building time of buildings currently under construction by <b>30m<\/b>.<br \/><br \/>\nDuration: now<br \/><br \/>\nPrice: --- <br \/>\nIn Inventory: 1","image":"98629d11293c9f2703592ed0314d99f320f45845","amount":1,"rarity":"common"},"newToken":"07eefc14105db0f30cb331a8b7af0bfe"}
 	var result struct {
-		Message      string
-		Error        bool
-		NewAjaxToken string
+		Message      string `json:"message"`
+		Error        bool   `json:"error"`
+		NewToken     string `json:"newToken"`
+		NewAjaxToken string `json:"newAjaxToken"`
 	}
 	if err := json.Unmarshal(pageHTML1, &result); err != nil {
 		return "", err
@@ -2509,7 +2521,13 @@ func (b *OGame) traderImportExportTrade(price int64, importToken string, planetR
 	if result.Error {
 		return "", errors.New(result.Message)
 	}
-	return result.NewAjaxToken, nil
+	// Current versions rotate the ajax token on every call and return it as "newAjaxToken";
+	// older ones only carried "newToken". Taking the item with an empty token always fails,
+	// so fall back rather than hand "" to the next request.
+	if result.NewAjaxToken != "" {
+		return result.NewAjaxToken, nil
+	}
+	return result.NewToken, nil
 }
 
 func (b *OGame) traderImportExportTakeItem(token string) error {
@@ -2533,20 +2551,50 @@ func (b *OGame) traderImportExportTakeItem(token string) error {
 	return nil
 }
 
+// ErrOfferOfTheDayAlreadyBought is returned when today's offer has already been taken.
+var ErrOfferOfTheDayAlreadyBought = errors.New("offer of the day already bought today")
+
+// offerOfTheDayAlreadyBought reports whether the trader page shows today's offer as already
+// taken. The game keeps rendering a price and a trade token in that state and only refuses at
+// the trade step, with a generic localized message ("Błąd" / "Error"), so the state has to be
+// read off the markup instead: buying hides the payment panel and reveals the overlay that
+// says there are no further offers today.
+func offerOfTheDayAlreadyBought(pageHTML []byte) bool {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(pageHTML))
+	if err != nil {
+		return false
+	}
+	payment := doc.Find("div.payment")
+	if payment.Size() == 0 {
+		return false
+	}
+	style := strings.ReplaceAll(payment.AttrOr("style", ""), " ", "")
+	return strings.Contains(style, "display:none")
+}
+
 func (b *OGame) buyOfferOfTheDay() error {
 	pageHTML, err := b.postPageContent(url.Values{"page": {"ajax"}, "component": {"traderimportexport"}}, url.Values{"show": {"importexport"}, "ajax": {"1"}})
 	if err != nil {
 		return err
 	}
+	if offerOfTheDayAlreadyBought(pageHTML) {
+		return ErrOfferOfTheDayAlreadyBought
+	}
 	price, importToken, planetResources, multiplier, err := b.extractor.ExtractOfferOfTheDay(pageHTML)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read the offer of the day: %w", err)
+	}
+	if price <= 0 {
+		return errors.New("failed to read the offer of the day: no price on the trader page")
 	}
 	newAjaxToken, err := b.traderImportExportTrade(price, importToken, planetResources, multiplier)
 	if err != nil {
-		return err
+		return fmt.Errorf("offer of the day trade failed: %w", err)
 	}
-	return b.traderImportExportTakeItem(newAjaxToken)
+	if err := b.traderImportExportTakeItem(newAjaxToken); err != nil {
+		return fmt.Errorf("offer of the day paid for, but taking the item failed: %w", err)
+	}
+	return nil
 }
 
 // Hack fix: When moon name is >12, the moon image disappear from the EventsBox

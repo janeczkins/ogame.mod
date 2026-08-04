@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/alaingilbert/ogame/pkg/ogame"
@@ -44,7 +45,19 @@ func extractOfferOfTheDayFromDoc(doc *goquery.Document) (price int64, importToke
 		err = errors.New("failed to extract offer of the day price")
 		return
 	}
-	price = utils.ParseInt(s.Text())
+	// Some languages group thousands with a (non-breaking) space, which ParseInt only strips
+	// at the edges — "36 111" then parsed as 0 and the bot silently bid nothing.
+	priceTxt := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s.Text())
+	price = utils.ParseInt(priceTxt)
+	if price <= 0 {
+		err = fmt.Errorf("failed to parse offer of the day price %q", strings.TrimSpace(s.Text()))
+		return
+	}
 	script := doc.Find("script").Text()
 	m := regexp.MustCompile(`var token\s?=\s?"([^"]*)";`).FindSubmatch([]byte(script))
 	if len(m) != 2 {
