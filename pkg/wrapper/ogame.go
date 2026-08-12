@@ -1313,8 +1313,33 @@ func (b *OGame) isDonutSystem() bool {
 	return b.cache.serverData.DonutSystem
 }
 
+// eventListVals returns the request for the event box / event rows of this server's game
+// version. Up to OGame 12 the event box was its own page ("fetchEventbox") and the rows came
+// from the "eventList" component; 13 dropped both. Asking the old way there is not a silent
+// no-op: "eventList" answers a JSON error (LOCA_API_ERRORS_INVALID_PARAM / 100053) and
+// "fetchEventbox" answers the entire ingame HTML page, and since neither parses as what the
+// caller expects, the engine concluded it was logged out and relogged in a loop - while the
+// Defender kept reporting "your empire is safe" with an attack in the air.
+func (b *OGame) eventListVals(action string) url.Values {
+	if ogVersion, err := version.NewVersion(sanitizeServerVersion(b.cache.serverData.Version)); err == nil {
+		if isVGreaterThanOrEqual(ogVersion, "13.0.0") {
+			vals := url.Values{"page": {"ingame"}, "component": {EventListV13AjaxPageName}, "action": {action}}
+			if action == "fetchEventBox" {
+				vals.Set("asJson", "1")
+			} else {
+				vals.Set("ajax", "1")
+			}
+			return vals
+		}
+	}
+	if action == "fetchEventBox" {
+		return url.Values{"page": {FetchEventboxAjaxPageName}}
+	}
+	return url.Values{"page": {"componentOnly"}, "component": {EventListAjaxPageName}, "ajax": {"1"}}
+}
+
 func (b *OGame) fetchEventbox() (res eventboxResp, err error) {
-	err = b.getPageJSON(url.Values{"page": {FetchEventboxAjaxPageName}}, &res)
+	err = b.getPageJSON(b.eventListVals("fetchEventBox"), &res)
 	return
 }
 
@@ -2615,8 +2640,24 @@ func fixAttackEvents(attacks []ogame.AttackEvent, planets []Planet) {
 }
 
 func (b *OGame) getAttacks(opts ...Option) (out []ogame.AttackEvent, err error) {
-	vals := url.Values{"page": {"componentOnly"}, "component": {EventListAjaxPageName}, "ajax": {"1"}}
-	page, err := getAjaxPage[parser.EventListAjaxPage](b, vals, opts...)
+	pageHTML, err := b.getPageContent(b.eventListVals("catchEvents"), opts...)
+	if err != nil {
+		return
+	}
+	// Never let a rejected request read as "no attacks". When the parameters stop matching the
+	// game version, OGame answers 200 with a JSON failure body, which parses into zero event
+	// rows - the Defender then announces the empire is safe with a fleet inbound. Say so loudly
+	// instead: that silence is what made this break invisible on OGame 13 in the first place.
+	if bytes.Contains(pageHTML, []byte(`"success":false`)) {
+		return nil, fmt.Errorf("the game rejected the event list request: %s", utils.Ternary(len(pageHTML) > 300, string(pageHTML[:300]), string(pageHTML)))
+	}
+	// The extractor treats a body without div#eventListWrap as "not logged in". OGame 13's
+	// catchEvents answers with the rows only, so give them the wrapper the extractor expects
+	// rather than reading an empty event list as a logged-out session.
+	if !bytes.Contains(pageHTML, []byte("eventListWrap")) {
+		pageHTML = append(append([]byte(`<div id="eventListWrap"><table><tbody>`), pageHTML...), []byte(`</tbody></table></div>`)...)
+	}
+	page, err := parser.ParseAjaxPage[parser.EventListAjaxPage](b.extractor, pageHTML)
 	if err != nil {
 		return
 	}

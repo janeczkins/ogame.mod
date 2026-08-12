@@ -38,13 +38,18 @@ const (
 	FetchResourcesPageName = "fetchResources"
 
 	// ajax pages
-	RocketlayerPageName            = "rocketlayer"
-	FetchEventboxAjaxPageName      = "fetchEventbox"
-	FetchResourcesAjaxPageName     = "fetchResources"
-	FetchResourcesbarAjaxPageName  = "resourcesbar"
-	GalaxyContentAjaxPageName      = "galaxyContent"
-	GalaxyAjaxPageName             = "galaxy"
-	EventListAjaxPageName          = "eventList"
+	RocketlayerPageName           = "rocketlayer"
+	FetchEventboxAjaxPageName     = "fetchEventbox"
+	FetchResourcesAjaxPageName    = "fetchResources"
+	FetchResourcesbarAjaxPageName = "resourcesbar"
+	GalaxyContentAjaxPageName     = "galaxyContent"
+	GalaxyAjaxPageName            = "galaxy"
+	EventListAjaxPageName         = "eventList"
+	// OGame 13 renamed the component to all-lowercase "eventlist" and moved both the event box
+	// and the event rows behind actions on it. The old "eventList" component answers
+	// LOCA_API_ERRORS_INVALID_PARAM (100053) and "page=fetchEventbox" serves the whole ingame
+	// page, so both v12-era requests have to keep their own names next to these.
+	EventListV13AjaxPageName       = "eventlist"
 	AjaxChatAjaxPageName           = "ajaxChat"
 	NoticesAjaxPageName            = "notices"
 	RepairlayerAjaxPageName        = "repairlayer"

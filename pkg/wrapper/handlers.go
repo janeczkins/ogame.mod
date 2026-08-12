@@ -652,6 +652,46 @@ func GetLfResearchHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, SuccessResp(res))
 }
 
+// LfResearchDetailsResp is the payload of GetLfResearchDetailsHandler.
+// The lifeform research page is the only place that says WHICH technology sits in each of a
+// planet's 18 research slots, and a slot's technology may belong to any lifeform - not just
+// the one settled on the planet. Callers need that list to know what is researchable here,
+// so it is returned next to the levels rather than as a second page load.
+type LfResearchDetailsResp struct {
+	Researches         ogame.LfResearches
+	Slots              [18]ogame.LfSlot
+	ArtefactsCollected int64
+	ArtefactsLimit     int64
+}
+
+// GetLfResearchDetailsHandler ...
+// The slot extractor only exists from the v9 extractor on - older ones panic rather than
+// return an error. No middleware.Recover() is installed, so an unguarded panic here would take
+// the whole engine down; turn it into a plain 500 instead and let the caller fall back to the
+// levels-only endpoint.
+func GetLfResearchDetailsHandler(c echo.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = c.JSON(http.StatusInternalServerError, ErrorResp(500, fmt.Sprintf("lifeform research slots are not supported by this ogame version: %v", r)))
+		}
+	}()
+	bot := c.Get("bot").(*OGame)
+	planetID, err := utils.ParseI64(c.Param("planetID"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, ErrorResp(400, "invalid planet id"))
+	}
+	res, err := bot.GetLfResearchDetails(ogame.CelestialID(planetID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, ErrorResp(500, err.Error()))
+	}
+	return c.JSON(http.StatusOK, SuccessResp(LfResearchDetailsResp{
+		Researches:         res.LfResearches,
+		Slots:              res.Slots,
+		ArtefactsCollected: res.ArtefactsCollected,
+		ArtefactsLimit:     res.ArtefactsLimit,
+	}))
+}
+
 // GetLfBonusesHandler ...
 func GetLfBonusesHandler(c echo.Context) error {
 	bot := c.Get("bot").(*OGame)
