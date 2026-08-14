@@ -2639,6 +2639,25 @@ func fixAttackEvents(attacks []ogame.AttackEvent, planets []Planet) {
 	}
 }
 
+// unwrapEventListEnvelope pulls the markup out of OGame 13's JSON answer for the event list
+// ({"content":{"eventlist":"<html>"}}). Returns false for anything that is not that envelope, so
+// older servers - which answer with plain HTML - pass through untouched.
+func unwrapEventListEnvelope(pageHTML []byte) ([]byte, bool) {
+	trimmed := bytes.TrimSpace(pageHTML)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil, false
+	}
+	var envelope struct {
+		Content struct {
+			EventList string `json:"eventlist"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(trimmed, &envelope); err != nil || envelope.Content.EventList == "" {
+		return nil, false
+	}
+	return []byte(envelope.Content.EventList), true
+}
+
 func (b *OGame) getAttacks(opts ...Option) (out []ogame.AttackEvent, err error) {
 	pageHTML, err := b.getPageContent(b.eventListVals("catchEvents"), opts...)
 	if err != nil {
@@ -2651,10 +2670,24 @@ func (b *OGame) getAttacks(opts ...Option) (out []ogame.AttackEvent, err error) 
 	if bytes.Contains(pageHTML, []byte(`"success":false`)) {
 		return nil, fmt.Errorf("the game rejected the event list request: %s", utils.Ternary(len(pageHTML) > 300, string(pageHTML[:300]), string(pageHTML)))
 	}
+	// OGame 13 does not answer catchEvents with HTML at all: it sends
+	// {"content":{"eventlist":"<div id=\"eventListWrap\"> ... "}}. The markup is a JSON string,
+	// so every quote inside it is escaped and goquery parses `id=\"eventListWrap\"` as an
+	// attribute whose value is literally `\"eventListWrap\"`. No div#eventListWrap is ever found
+	// and the extractor reports the session as logged out - the engine answers "not logged", the
+	// Defender logs an error instead of an attack, and the account sits there unsaved. Unwrap the
+	// envelope first so the rest of the pipeline sees real HTML.
+	if eventList, ok := unwrapEventListEnvelope(pageHTML); ok {
+		pageHTML = eventList
+	}
 	// The extractor treats a body without div#eventListWrap as "not logged in". OGame 13's
 	// catchEvents answers with the rows only, so give them the wrapper the extractor expects
 	// rather than reading an empty event list as a logged-out session.
-	if !bytes.Contains(pageHTML, []byte("eventListWrap")) {
+	//
+	// Match the real attribute, not the bare word: the escaped JSON above also contains the
+	// string "eventListWrap", so a substring test passed on exactly the bodies that needed the
+	// wrapper most and skipped the repair every time the event list was non-empty.
+	if !bytes.Contains(pageHTML, []byte(`id="eventListWrap"`)) && !bytes.Contains(pageHTML, []byte(`id='eventListWrap'`)) {
 		pageHTML = append(append([]byte(`<div id="eventListWrap"><table><tbody>`), pageHTML...), []byte(`</tbody></table></div>`)...)
 	}
 	page, err := parser.ParseAjaxPage[parser.EventListAjaxPage](b.extractor, pageHTML)
