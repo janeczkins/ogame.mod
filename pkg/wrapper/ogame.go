@@ -2520,59 +2520,116 @@ func calcResources(price int64, planetResources ogame.PlanetResources, multiplie
 	return payload, remaining
 }
 
+type traderResponse struct {
+	Content struct {
+		Trader string `json:"trader"`
+	} `json:"content"`
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Errors  []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+	NewAjaxToken string `json:"newAjaxToken"`
+}
+
+func parseTraderResponse(body []byte) (traderResponse, error) {
+	var response traderResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return response, fmt.Errorf("invalid trader response: %w", err)
+	}
+	return response, nil
+}
+
+func traderResponseError(response traderResponse) error {
+	if response.Message != "" {
+		return errors.New(response.Message)
+	}
+	if len(response.Errors) > 0 && response.Errors[0].Message != "" {
+		return errors.New(response.Errors[0].Message)
+	}
+	return errors.New("the game rejected the trader request")
+}
+
+var traderTokenRegex = regexp.MustCompile(`(?:var\s+)?token\s*=\s*"([^"]+)"`)
+
+func extractTraderToken(pageHTML []byte) (string, error) {
+	match := traderTokenRegex.FindSubmatch(pageHTML)
+	if len(match) != 2 {
+		return "", errors.New("failed to extract the trader token")
+	}
+	return string(match[1]), nil
+}
+
+// traderImportExportPage opens Import/Export using the OGame 13 trader flow. The old
+// page=ajax&component=traderimportexport request now returns only "An error has occured!".
+// The actual offer markup is nested in content.trader of the JSON response.
+func (b *OGame) traderImportExportPage() ([]byte, string, error) {
+	traderPage, err := b.getPageContent(url.Values{"page": {"ingame"}, "component": {"trader"}})
+	if err != nil {
+		return nil, "", err
+	}
+	traderToken, err := extractTraderToken(traderPage)
+	if err != nil {
+		return nil, "", err
+	}
+	body, err := b.postPageContent(
+		url.Values{"page": {"ingame"}, "component": {"trader"}, "action": {"importexport"}, "ajax": {"1"}},
+		url.Values{"action": {"importexport"}, "token": {traderToken}, "ajax": {"1"}},
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	response, err := parseTraderResponse(body)
+	if err != nil {
+		return nil, "", err
+	}
+	if response.Content.Trader == "" {
+		return nil, "", errors.New("the game returned an empty Import/Export panel")
+	}
+	if response.NewAjaxToken == "" {
+		return nil, "", errors.New("the game did not return a trader token")
+	}
+	return []byte(response.Content.Trader), response.NewAjaxToken, nil
+}
+
 func (b *OGame) traderImportExportTrade(price int64, importToken string, planetResources ogame.PlanetResources, multiplier ogame.Multiplier) (string, error) {
 	payload, missing := calcResources(price, planetResources, multiplier)
 	if missing > 0 {
 		return "", fmt.Errorf("not enough resources for the offer of the day: %d of %d missing", missing, price)
 	}
-	payload.Add("action", "trade")
+	payload.Add("action", "importExportTrade")
 	payload.Add("bid[honor]", "0")
 	payload.Add("token", importToken)
-	payload.Add("ajax", "1")
-	pageHTML1, err := b.postPageContent(url.Values{"page": {"ajax"}, "component": {"traderimportexport"}, "ajax": {"1"}, "action": {"trade"}, "asJson": {"1"}}, payload)
+	body, err := b.postPageContent(url.Values{"page": {"ingame"}, "component": {"trader"}, "asJson": {"1"}}, payload)
 	if err != nil {
 		return "", err
 	}
-	// {"message":"You have bought a container.","error":false,"item":{"uuid":"40f6c78e11be01ad3389b7dccd6ab8efa9347f3c","itemText":"You have purchased 1 KRAKEN Bronze.","bargainText":"The contents of the container not appeal to you? For 500 Dark Matter you can exchange the container for another random container of the same quality. You can only carry out this exchange 2 times per daily offer.","bargainCost":500,"bargainCostText":"Costs: 500 Dark Matter","tooltip":"KRAKEN Bronze|Reduces the building time of buildings currently under construction by <b>30m<\/b>.<br \/><br \/>\nDuration: now<br \/><br \/>\nPrice: --- <br \/>\nIn Inventory: 1","image":"98629d11293c9f2703592ed0314d99f320f45845","amount":1,"rarity":"common"},"newToken":"07eefc14105db0f30cb331a8b7af0bfe"}
-	var result struct {
-		Message      string `json:"message"`
-		Error        bool   `json:"error"`
-		NewToken     string `json:"newToken"`
-		NewAjaxToken string `json:"newAjaxToken"`
-	}
-	if err := json.Unmarshal(pageHTML1, &result); err != nil {
+	response, err := parseTraderResponse(body)
+	if err != nil {
 		return "", err
 	}
-	if result.Error {
-		return "", errors.New(result.Message)
+	if !response.Success {
+		return "", traderResponseError(response)
 	}
-	// Current versions rotate the ajax token on every call and return it as "newAjaxToken";
-	// older ones only carried "newToken". Taking the item with an empty token always fails,
-	// so fall back rather than hand "" to the next request.
-	if result.NewAjaxToken != "" {
-		return result.NewAjaxToken, nil
+	if response.NewAjaxToken == "" {
+		return "", errors.New("the game accepted the offer but did not return a trader token")
 	}
-	return result.NewToken, nil
+	return response.NewAjaxToken, nil
 }
 
 func (b *OGame) traderImportExportTakeItem(token string) error {
-	payload := url.Values{"action": {"takeItem"}, "token": {token}, "ajax": {"1"}}
-	pageHTML, err := b.postPageContent(url.Values{"page": {"ajax"}, "component": {"traderimportexport"}, "ajax": {"1"}, "action": {"takeItem"}, "asJson": {"1"}}, payload)
+	payload := url.Values{"action": {"importExportTakeItem"}, "token": {token}}
+	body, err := b.postPageContent(url.Values{"page": {"ingame"}, "component": {"trader"}, "asJson": {"1"}}, payload)
 	if err != nil {
 		return err
 	}
-	var result struct {
-		Message      string
-		Error        bool
-		NewAjaxToken string
-	}
-	if err := json.Unmarshal(pageHTML, &result); err != nil {
+	response, err := parseTraderResponse(body)
+	if err != nil {
 		return err
 	}
-	if result.Error {
-		return errors.New(result.Message)
+	if !response.Success {
+		return traderResponseError(response)
 	}
-	// {"error":false,"message":"You have accepted the offer and put the item in your inventory.","item":{"name":"Bronze Deuterium Booster","image":"f0e514af79d0808e334e9b6b695bf864b861bdfa","imageLarge":"c7c2837a0b341d37383d6a9d8f8986f500db7bf9","title":"Bronze Deuterium Booster|+10% more Deuterium Synthesizer harvest on one planet<br \/><br \/>\nDuration: 1w<br \/><br \/>\nPrice: --- <br \/>\nIn Inventory: 134","effect":"+10% more Deuterium Synthesizer harvest on one planet","ref":"d9fa5f359e80ff4f4c97545d07c66dbadab1d1be","rarity":"common","amount":134,"amount_free":134,"amount_bought":0,"category":["d8d49c315fa620d9c7f1f19963970dea59a0e3be","e71139e15ee5b6f472e2c68a97aa4bae9c80e9da"],"currency":"dm","costs":"2500","isReduced":false,"buyable":false,"canBeActivated":true,"canBeBoughtAndActivated":false,"isAnUpgrade":false,"isCharacterClassItem":false,"hasEnoughCurrency":true,"cooldown":0,"duration":604800,"durationExtension":null,"totalTime":null,"timeLeft":null,"status":null,"extendable":false,"firstStatus":"effecting","toolTip":"Bronze Deuterium Booster|+10% more Deuterium Synthesizer harvest on one planet&lt;br \/&gt;&lt;br \/&gt;\nDuration: 1w&lt;br \/&gt;&lt;br \/&gt;\nPrice: --- &lt;br \/&gt;\nIn Inventory: 134","buyTitle":"This item is currently unavailable for purchase.","activationTitle":"Activate","moonOnlyItem":false,"newOffer":false,"noOfferMessage":"There are no further offers today. Please come again tomorrow."},"newToken":"dec779714b893be9b39c0bedf5738450","components":[],"newAjaxToken":"e20cf0a6ca0e9b43a81ccb8fe7e7e2e3"}
 	return nil
 }
 
@@ -2598,14 +2655,14 @@ func offerOfTheDayAlreadyBought(pageHTML []byte) bool {
 }
 
 func (b *OGame) buyOfferOfTheDay() error {
-	pageHTML, err := b.postPageContent(url.Values{"page": {"ajax"}, "component": {"traderimportexport"}}, url.Values{"show": {"importexport"}, "ajax": {"1"}})
+	pageHTML, importToken, err := b.traderImportExportPage()
 	if err != nil {
 		return err
 	}
 	if offerOfTheDayAlreadyBought(pageHTML) {
 		return ErrOfferOfTheDayAlreadyBought
 	}
-	price, importToken, planetResources, multiplier, err := b.extractor.ExtractOfferOfTheDay(pageHTML)
+	price, _, planetResources, multiplier, err := b.extractor.ExtractOfferOfTheDay(pageHTML)
 	if err != nil {
 		return fmt.Errorf("failed to read the offer of the day: %w", err)
 	}

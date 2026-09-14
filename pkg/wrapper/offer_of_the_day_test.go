@@ -103,6 +103,36 @@ func TestOfferOfTheDayAlreadyBought(t *testing.T) {
 	assert.False(t, offerOfTheDayAlreadyBought([]byte(`<div class="right_content"></div>`)))
 }
 
+func TestExtractTraderTokenSupportsOGame13Markup(t *testing.T) {
+	token, err := extractTraderToken([]byte(`<script>token = "current-token"</script>`))
+	assert.NoError(t, err)
+	assert.Equal(t, "current-token", token)
+
+	token, err = extractTraderToken([]byte(`<script>var token = "legacy-token"</script>`))
+	assert.NoError(t, err)
+	assert.Equal(t, "legacy-token", token)
+}
+
+func TestParseTraderResponseExtractsImportExportPanel(t *testing.T) {
+	response, err := parseTraderResponse([]byte(`{
+		"content":{"trader":"<div class=\"price js_import_price\">122.274</div>"},
+		"newAjaxToken":"rotated-token"
+	}`))
+	assert.NoError(t, err)
+	assert.Contains(t, response.Content.Trader, "js_import_price")
+	assert.Equal(t, "rotated-token", response.NewAjaxToken)
+}
+
+func TestTraderResponseErrorUsesGameError(t *testing.T) {
+	response, err := parseTraderResponse([]byte(`{
+		"success":false,
+		"errors":[{"message":"Not enough resources"}],
+		"newAjaxToken":"rotated-token"
+	}`))
+	assert.NoError(t, err)
+	assert.EqualError(t, traderResponseError(response), "Not enough resources")
+}
+
 // A player who cannot cover the price must be told so, instead of sending an underfunded bid
 // that the game rejects with an unhelpful error.
 func TestCalcResourcesReportsMissingResources(t *testing.T) {
