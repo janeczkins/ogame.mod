@@ -60,11 +60,13 @@ func extractOfferOfTheDayFromDoc(doc *goquery.Document) (price int64, importToke
 	}
 	script := doc.Find("script").Text()
 	m := regexp.MustCompile(`var token\s?=\s?"([^"]*)";`).FindSubmatch([]byte(script))
-	if len(m) != 2 {
-		err = errors.New("failed to extract offer of the day import token")
-		return
+	// Since OGame 13 the Import/Export panel is returned as an HTML fragment and its
+	// request token lives in the surrounding JSON response (newAjaxToken), not in a
+	// script inside the fragment. Keep extracting the token for legacy pages, but do
+	// not reject an otherwise complete offer when it is absent.
+	if len(m) == 2 {
+		importToken = string(m[1])
 	}
-	importToken = string(m[1])
 	m = regexp.MustCompile(`var planetResources\s?=\s?({[^;]*});`).FindSubmatch([]byte(script))
 	if len(m) != 2 {
 		err = errors.New("failed to extract offer of the day raw planet resources")
