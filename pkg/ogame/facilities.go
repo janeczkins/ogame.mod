@@ -14,7 +14,8 @@ func (f LazyFacilities) GetAllianceDepot() int64   { return f().AllianceDepot }
 func (f LazyFacilities) GetMissileSilo() int64     { return f().MissileSilo }
 func (f LazyFacilities) GetNaniteFactory() int64   { return f().NaniteFactory }
 func (f LazyFacilities) GetTerraformer() int64     { return f().Terraformer }
-func (f LazyFacilities) GetSpaceDock() int64       { return f().SpaceDock }
+func (f LazyFacilities) GetSpaceDock() int64                  { return f().SpaceDock }
+func (f LazyFacilities) GetInterstellarAnomalyScanner() int64 { return f().InterstellarAnomalyScanner }
 func (f LazyFacilities) GetLunarBase() int64       { return f().LunarBase }
 func (f LazyFacilities) GetSensorPhalanx() int64   { return f().SensorPhalanx }
 func (f LazyFacilities) GetJumpGate() int64        { return f().JumpGate }
@@ -29,7 +30,8 @@ type Facilities struct {
 	MissileSilo     int64 // 44
 	NaniteFactory   int64 // 15
 	Terraformer     int64 // 33
-	SpaceDock       int64 // 36
+	SpaceDock                  int64 // 36
+	InterstellarAnomalyScanner int64 // 45
 	LunarBase       int64 // 41
 	SensorPhalanx   int64 // 42
 	JumpGate        int64 // 43
@@ -42,7 +44,8 @@ func (f Facilities) GetAllianceDepot() int64   { return f.AllianceDepot }
 func (f Facilities) GetMissileSilo() int64     { return f.MissileSilo }
 func (f Facilities) GetNaniteFactory() int64   { return f.NaniteFactory }
 func (f Facilities) GetTerraformer() int64     { return f.Terraformer }
-func (f Facilities) GetSpaceDock() int64       { return f.SpaceDock }
+func (f Facilities) GetSpaceDock() int64                  { return f.SpaceDock }
+func (f Facilities) GetInterstellarAnomalyScanner() int64 { return f.InterstellarAnomalyScanner }
 func (f Facilities) GetLunarBase() int64       { return f.LunarBase }
 func (f Facilities) GetSensorPhalanx() int64   { return f.SensorPhalanx }
 func (f Facilities) GetJumpGate() int64        { return f.JumpGate }
@@ -71,6 +74,8 @@ func (f Facilities) ByID(id ID) int64 {
 		return f.GetTerraformer()
 	case SpaceDockID:
 		return f.GetSpaceDock()
+	case InterstellarAnomalyScannerID:
+		return f.GetInterstellarAnomalyScanner()
 	case LunarBaseID:
 		return f.GetLunarBase()
 	case SensorPhalanxID:
@@ -91,6 +96,7 @@ func (f Facilities) String() string {
 		" Nanite Factory: " + utils.FI64(f.NaniteFactory) + "\n" +
 		"    Terraformer: " + utils.FI64(f.Terraformer) + "\n" +
 		"     Space Dock: " + utils.FI64(f.SpaceDock) + "\n" +
+		"    IAS Scanner: " + utils.FI64(f.InterstellarAnomalyScanner) + "\n" +
 		"     Lunar Base: " + utils.FI64(f.LunarBase) + "\n" +
 		" Sensor Phalanx: " + utils.FI64(f.SensorPhalanx) + "\n" +
 		"      Jump Gate: " + utils.FI64(f.JumpGate)

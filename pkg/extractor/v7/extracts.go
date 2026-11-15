@@ -68,6 +68,10 @@ func ExtractFacilitiesFromDoc(doc *goquery.Document) (ogame.Facilities, error) {
 	res.NaniteFactory = GetNbr(doc, "naniteFactory")
 	res.Terraformer = GetNbr(doc, "terraformer")
 	res.SpaceDock = GetNbr(doc, "repairDock")
+	res.InterstellarAnomalyScanner = GetNbr(doc, "interstellarAnomalyScanner")
+	if res.InterstellarAnomalyScanner == 0 {
+		res.InterstellarAnomalyScanner = GetNbr(doc, "station45")
+	}
 	res.LunarBase = GetNbr(doc, "lunarBase")         // TODO: ensure name is correct
 	res.SensorPhalanx = GetNbr(doc, "sensorPhalanx") // TODO: ensure name is correct
 	res.JumpGate = GetNbr(doc, "jumpGate")           // TODO: ensure name is correct

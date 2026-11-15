@@ -46,6 +46,8 @@ func (o ID) String() string {
 		res += "Terraformer"
 	case SpaceDockID:
 		res += "SpaceDock"
+	case InterstellarAnomalyScannerID:
+		res += "InterstellarAnomalyScanner"
 	case LunarBaseID:
 		res += "LunarBase"
 	case SensorPhalanxID:
@@ -421,6 +423,7 @@ func (o ID) IsFacility() bool {
 		o == NaniteFactoryID ||
 		o == TerraformerID ||
 		o == SpaceDockID ||
+		o == InterstellarAnomalyScannerID ||
 		o == LunarBaseID ||
 		o == SensorPhalanxID ||
 		o == JumpGateID

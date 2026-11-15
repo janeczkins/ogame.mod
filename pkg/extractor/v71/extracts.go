@@ -231,6 +231,7 @@ type planetTechsResp struct {
 	Num33  int64 `json:"33"`
 	Num34  int64 `json:"34"`
 	Num36  int64 `json:"36"`
+	Num45  int64 `json:"45"`
 	Num41  int64 `json:"41"`
 	Num42  int64 `json:"42"`
 	Num43  int64 `json:"43"`
@@ -431,7 +432,8 @@ func extractTechs(pageHTML []byte) (techs ogame.Techs, err error) {
 		MissileSilo:     res.Num44,
 		NaniteFactory:   res.Num15,
 		Terraformer:     res.Num33,
-		SpaceDock:       res.Num36,
+		SpaceDock:                  res.Num36,
+		InterstellarAnomalyScanner: res.Num45,
 		LunarBase:       res.Num41,
 		SensorPhalanx:   res.Num42,
 		JumpGate:        res.Num43,

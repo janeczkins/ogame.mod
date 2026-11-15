@@ -19,6 +19,7 @@ var (
 	Shipyard                          = register[*shipyard](newShipyard)
 	SolarPlant                        = register[*solarPlant](newSolarPlant)
 	SpaceDock                         = register[*spaceDock](newSpaceDock)
+	InterstellarAnomalyScanner        = register[*interstellarAnomalyScanner](newInterstellarAnomalyScanner)
 	LunarBase                         = register[*lunarBase](newLunarBase)
 	SensorPhalanx                     = register[*sensorPhalanx](newSensorPhalanx)
 	JumpGate                          = register[*jumpGate](newJumpGate)
@@ -269,6 +270,7 @@ var Buildings = []Building{
 	NaniteFactory,
 	Terraformer,
 	SpaceDock,
+	InterstellarAnomalyScanner,
 	LunarBase,
 	SensorPhalanx,
 	JumpGate,
@@ -296,6 +298,7 @@ var PlanetBuildings = []Building{
 	NaniteFactory,
 	Terraformer,
 	SpaceDock,
+	InterstellarAnomalyScanner,
 }
 
 // MoonBuildings arrays of moon specific buildings

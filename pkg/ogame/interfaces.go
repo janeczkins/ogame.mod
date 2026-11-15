@@ -101,6 +101,7 @@ type IFacilities interface {
 	GetNaniteFactory() int64
 	GetTerraformer() int64
 	GetSpaceDock() int64
+	GetInterstellarAnomalyScanner() int64
 	GetLunarBase() int64
 	GetSensorPhalanx() int64
 	GetJumpGate() int64
