@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -1253,13 +1254,63 @@ func GenerateSittingCode(ctx context.Context, client HttpClient, platform Platfo
 	return tokenResponse.Token, nil
 }
 
-// FindServer ...
+func normalizeServerString(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "\u2013", "-") // en-dash
+	s = strings.ReplaceAll(s, "\u2014", "-") // em-dash
+	return s
+}
+
+// FindServer searches for a server by exact match, normalized name, or server number.
 func FindServer(serverName, lang string, servers []Server) (out Server, found bool) {
+	if lang == "ba" {
+		lang = "yu"
+	}
+	normInput := normalizeServerString(serverName)
+	if normInput == "" {
+		return
+	}
+
+	// 1. Exact match
 	for _, s := range servers {
 		if s.Name == serverName && s.Language == lang {
 			return s, true
 		}
 	}
+
+	// 2. Case-insensitive & normalized dash match with specified language
+	for _, s := range servers {
+		if s.Language == lang && strings.EqualFold(normInput, normalizeServerString(s.Name)) {
+			return s, true
+		}
+	}
+
+	// 3. Match by number (e.g. "279", "s279", "s279-pl")
+	numStr := strings.TrimPrefix(strings.ToLower(normInput), "s")
+	if idx := strings.Index(numStr, "-"); idx != -1 {
+		numStr = numStr[:idx]
+	}
+	if num, err := strconv.ParseInt(numStr, 10, 64); err == nil && num > 0 {
+		for _, s := range servers {
+			if s.Number == num && (lang == "" || s.Language == lang) {
+				return s, true
+			}
+		}
+	}
+
+	// 4. Fallback: unique match by normalized name across all servers if lang is empty or mismatched
+	var candidate Server
+	count := 0
+	for _, s := range servers {
+		if strings.EqualFold(normInput, normalizeServerString(s.Name)) {
+			candidate = s
+			count++
+		}
+	}
+	if count == 1 {
+		return candidate, true
+	}
+
 	return
 }
 
@@ -1282,7 +1333,22 @@ func FindAccount(serverName, lang string, playerID int64, accounts []Account, se
 		}
 	}
 	if account.ID == 0 {
-		return Account{}, Server{}, ErrAccountNotFound
+		var available []string
+		for _, a := range accounts {
+			sLabel := fmt.Sprintf("%d (%s)", a.Server.Number, a.Server.Language)
+			for _, s := range servers {
+				if s.Language == a.Server.Language && s.Number == a.Server.Number {
+					sLabel = fmt.Sprintf("%s (%d, %s)", s.Name, s.Number, s.Language)
+					break
+				}
+			}
+			available = append(available, fmt.Sprintf("%s [Account: %s, ID: %d]", sLabel, a.Name, a.ID))
+		}
+		if len(available) > 0 {
+			return Account{}, Server{}, fmt.Errorf("%w for %s (%d, %s). Accounts found on this lobby: %s",
+				ErrAccountNotFound, server.Name, server.Number, server.Language, strings.Join(available, "; "))
+		}
+		return Account{}, Server{}, fmt.Errorf("%w: no accounts found on this lobby account", ErrAccountNotFound)
 	}
 	return account, server, nil
 }
